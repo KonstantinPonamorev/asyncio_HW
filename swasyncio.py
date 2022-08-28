@@ -67,7 +67,6 @@ async def insert_data(pool: asyncpg.Pool, data):
             await conn.executemany(query, data)
 
 
-
 async def main():
     new_db = database.NewDataBase(database.DB)
     data = await get_all_data()
