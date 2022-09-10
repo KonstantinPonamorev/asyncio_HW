@@ -1,65 +1,57 @@
-from sqlalchemy import MetaData, Table, String, Integer, Column, insert
-import sqlalchemy
+import asyncio
+import asyncpg
+from sqlalchemy import Integer, String, Column
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker
+
+import config
 
 
-DB = 'postgresql://netology:1234@127.0.0.1:5432/asyncio'
+engine = create_async_engine(config.PG_DSN_ALC, echo=True)
+Base = declarative_base()
 
 
-class NewDataBase:
+class People(Base):
 
-    def __init__(self, DB):
+    __tablename__ = 'people'
 
-        self.engine = sqlalchemy.create_engine(DB)
-        self.connection = self.engine.connect()
-        self.metadata = MetaData()
-        self.metadata.drop_all(self.engine)
-
-        people = Table('people', self.metadata,
-                       Column('id', Integer(), primary_key=True),
-                       Column('birth_year', String()),
-                       Column('eye_color', String()),
-                       Column('films', String()),
-                       Column('gender', String()),
-                       Column('hair_color', String()),
-                       Column('height', Integer()),
-                       Column('homeworld', String()),
-                       Column('mass', Integer()),
-                       Column('name', String()),
-                       Column('skin_color', String()),
-                       Column('species', String()),
-                       Column('starships', String()),
-                       Column('vehicles', String()))
-
-        self.metadata.create_all(self.engine)
+    id = Column(Integer, primary_key=True)
+    birth_year = Column(String)
+    eye_color = Column(String)
+    films = Column(String)
+    gender = Column(String)
+    hair_color = Column(String)
+    height = Column(String)
+    homeworld = Column(String)
+    mass = Column(String)
+    name = Column(String)
+    skin_color = Column(String)
+    species = Column(String)
+    starships = Column(String)
+    vehicles = Column(String)
 
 
-class DataBaseWork:
+async def get_async_session(
+    drop: bool = False, create: bool = False
+):
 
-    def __init__(self, DB):
+    async with engine.begin() as conn:
+        if drop:
+            await conn.run_sync(Base.metadata.drop_all)
+        if create:
+            await conn.run_sync(Base.metadata.create_all)
+    async_session_maker = sessionmaker(
+        engine, expire_on_commit=False, class_=AsyncSession
+    )
 
-        self.engine = sqlalchemy.create_engine(DB)
-        self.connection = self.engine.connect()
-        self.metadata = MetaData()
-        self.metadata.drop_all(self.engine)
-
-        self.people = Table('people', self.metadata,
-                       Column('id', Integer(), primaty_key=True),
-                       Column('birth_year', String()),
-                       Column('eye_color', String()),
-                       Column('films', String()),
-                       Column('gender', String()),
-                       Column('hair_color', String()),
-                       Column('height', Integer()),
-                       Column('homeworld', String()),
-                       Column('mass', Integer()),
-                       Column('name', String()),
-                       Column('skin_color', String()),
-                       Column('species', String()),
-                       Column('starships', String()),
-                       Column('vehicles', String()))
+    return async_session_maker
 
 
-    def insert_people(self, people_info):
-        self.ins_people = insert(self.people)
-        self.connection.execute(self.ins_people, people_info)
-
+async def insert_people(pool: asyncpg.Pool, data):
+    query = 'INSERT INTO people (name, height, mass, hair_color, skin_color, eye_color, ' \
+            'birth_year, gender, homeworld, films, species, vehicles, starships) VALUES ($1, $2, $3, $4, ' \
+            '$5, $6, $7, $8, $9, $10, $11, $12, $13)'
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.executemany(query, data)

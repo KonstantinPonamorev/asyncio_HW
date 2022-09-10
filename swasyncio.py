@@ -4,6 +4,8 @@ from more_itertools import chunked
 import asyncpg
 import database
 
+import config
+
 
 MAX_CHUNK = 20
 
@@ -28,7 +30,7 @@ async def get_object_name(session, object_url):
 
 async def get_all_data():
     async with aiohttp.ClientSession() as session:
-        coroutines = (get_people(session, i) for i in range(1, 83))
+        coroutines = (get_people(session, i) for i in range(1, 84))
         result = []
         for coroutines_chunk in chunked(coroutines, MAX_CHUNK):
             peoples = await asyncio.gather(*coroutines_chunk)
@@ -55,31 +57,40 @@ async def get_all_data():
             item['starships'] = ', '.join(item['starships'])
             item['vehicles'] = await asyncio.gather(*coroutines_vehicles)
             item['vehicles'] = ', '.join(item['vehicles'])
+            if 'created' in item:
+                item.pop('created')
+            if 'edited' in item:
+                item.pop('edited')
+            if 'url' in item:
+                item.pop('url')
+            if 'detail' in item:
+                result.remove(item)
+        result.pop(16)
         return result
 
 
-async def insert_data(pool: asyncpg.Pool, data):
-    query = 'INSERT INTO people (birth_year, eye_color, films, gender, hair_color, height, ' \
-            'homeworld, mass, name, skin_color, species, starships, vehicles) VALUES ($1, $2, $3, $4, ' \
-            '$5, $6, $7, $8, $9, $10, $11, $12, $13)'
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            await conn.executemany(query, data)
+def transform_data(result):
+    new_data = []
+    for item in result:
+        new_data.append(tuple(item.values()))
+    return new_data
 
 
 async def main():
-    new_db = database.NewDataBase(database.DB)
+    await database.get_async_session(True, True)
     data = await get_all_data()
-    pool = await asyncpg.create_pool(database.DB, min_size=20, max_size=20)
+    new_data = transform_data(data)
+    pool = await asyncpg.create_pool(config.PG_DSN, min_size=20, max_size=20)
     tasks = []
-    for people_chunk in chunked(data, 100):
-        tasks.append(asyncio.create_task(insert_data(pool, people_chunk)))
+    for people_chunk in chunked(new_data, MAX_CHUNK):
+        tasks.append(asyncio.create_task(database.insert_people(pool, people_chunk)))
     await asyncio.gather(*tasks)
     await pool.close()
 
 
-asyncio.run(main())
-print('ok')
+if __name__ == '__main__':
+    asyncio.run(main())
+
 
 
 
